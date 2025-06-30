@@ -1,2 +1,2 @@
 # Blast-Autofill
-Autofills from NIH's Blastn
+Autofills from NCBI's Blastn
