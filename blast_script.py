@@ -103,9 +103,8 @@ def parse_initial_blast_results(xml_results, query_sequence):
                 accession_element = hit.find('Hit_accession')
                 accession = accession_element.text if accession_element is not None else "N/A"
 
-                # Initial definition from BLAST XML (can be refined later)
-                # hit_def_element = hit.find('Hit_def')
-                # initial_def = hit_def_element.text if hit_def_element is not None else "N/A"
+                hit_def_element = hit.find('Hit_def')
+                raw_hit_def = hit_def_element.text if hit_def_element is not None else "N/A"
 
                 hsp = hit.find('.//Hsp')  # Find the first HSP
                 if hsp is not None:
@@ -144,7 +143,8 @@ def parse_initial_blast_results(xml_results, query_sequence):
                         "Query Start Base": query_start_base,
                         "Query End": query_to,
                         "Query End Base": query_end_base,
-                        "E Value": evalue
+                        "E Value": evalue,
+                        "Hit_def_raw": raw_hit_def
                     })
     except ET.ParseError as e:
         print(f"Error parsing initial BLAST XML: {e}")
@@ -282,6 +282,16 @@ if __name__ == "__main__":
         database_to_search = "nr"  # blastx typically uses nr (protein database)
         print("Using 'nr' database for blastx.")
 
+    # User preferences
+    exclude_landoltia_input = input("Exclude 'Landoltia punctata' from results? (yes/no, default no): ").strip().lower()
+    exclude_landoltia = exclude_landoltia_input == "yes"
+
+    definition_format_choice_input = input("Use full-length definition or shortened version from initial BLAST hit? (full/short, default full): ").strip().lower()
+    if definition_format_choice_input == "short":
+        definition_format_choice = "short"
+    else:
+        definition_format_choice = "full" # Default to full
+
     print(
         f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
     try:
@@ -351,15 +361,45 @@ if __name__ == "__main__":
                 time.sleep(1)  # Wait after an error too
                 continue
 
-            # Apply filter: organism must not have been selected already
-            if details_data["Organism"] not in selected_organisms:
+            # Assign definition based on user choice
+            if definition_format_choice == "short":
+                organism_name = details_data.get("Organism", "")
+                raw_definition = hit.get("Hit_def_raw", "")
+                if organism_name and raw_definition and organism_name in raw_definition:
+                    try:
+                        short_def = raw_definition.split(organism_name, 1)[-1].strip().lstrip(",").strip()
+                        if short_def: # Ensure short_def is not empty
+                            hit["Definition"] = short_def
+                        else: # Fallback if short_def is empty after stripping
+                            hit["Definition"] = details_data["Definition"]
+                            print(f"    Note: Short definition for {hit['Accession #']} was empty, used full definition.")
+                    except Exception as e: # Fallback on any parsing error
+                        hit["Definition"] = details_data["Definition"]
+                        print(f"    Note: Error parsing short definition for {hit['Accession #']} ('{e}'), used full definition.")
+                else: # Fallback if organism not in raw_def or missing data
+                    hit["Definition"] = details_data["Definition"]
+                    if not (organism_name and raw_definition):
+                         print(f"    Note: Missing organism or raw_definition for {hit['Accession #']}, used full definition.")
+                    elif organism_name not in raw_definition:
+                         print(f"    Note: Organism '{organism_name}' not found in raw_definition for {hit['Accession #']}, used full definition.")
+
+            else: # Full definition choice
                 hit["Definition"] = details_data["Definition"]
-                hit["Organism"] = details_data["Organism"]
+
+            hit["Organism"] = details_data["Organism"] # Always assign organism
+
+            # Apply filters: optional Landoltia exclusion and unique organism
+            organism_is_landoltia = details_data["Organism"] == "Landoltia punctata"
+
+            if exclude_landoltia and organism_is_landoltia:
+                print(f"  Skipped (Landoltia punctata excluded by user): {hit['Accession #']} - {details_data['Organism']}")
+            elif details_data["Organism"] in selected_organisms:
+                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
+            else:
+                # If not excluded Landoltia (or not Landoltia at all) AND organism is new
                 final_results.append(hit)
                 selected_organisms.add(details_data["Organism"])
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
-            elif details_data["Organism"] in selected_organisms: # This condition implies it's a duplicate
-                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
 
             time.sleep(1)  # Be respectful to NCBI servers
 
