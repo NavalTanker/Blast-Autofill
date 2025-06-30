@@ -45,7 +45,7 @@ def check_blast_status(rid):
     params = {
         "CMD": "Get",
         "RID": rid,
-        "FORMAT_OBJECT": "SearchInfo"
+        "FORMAT_OBJECT": "SearchInfo" 
     }
     response = requests.get(url, params=params)
     response.raise_for_status()
@@ -62,10 +62,12 @@ def check_blast_status(rid):
             qblast_info = root.find('.//QBlastInfo')
             if qblast_info is not None:
                 status_element = qblast_info.find('Status')
-                if status_element is not None:
-                    status = status_element.text
+                if status_element is not None and status_element.text is not None:
+                    status = status_element.text.strip() # Ensure to strip whitespace
         except ET.ParseError:
-            pass # Ignore if not well-formed XML
+            # If XML parsing fails, status remains "UNKNOWN" (or what was found by fallback)
+            print(f"Warning: Could not parse XML status response for RID {rid}. Response text (first 300 chars): {response.text[:300]}")
+            pass 
     return status
 
 
@@ -92,7 +94,7 @@ def parse_initial_blast_results(xml_results):
             for hit in iteration.findall('.//Hit'):
                 accession_element = hit.find('Hit_accession')
                 accession = accession_element.text if accession_element is not None else "N/A"
-
+                
                 # Initial definition from BLAST XML (can be refined later)
                 # hit_def_element = hit.find('Hit_def')
                 # initial_def = hit_def_element.text if hit_def_element is not None else "N/A"
@@ -101,10 +103,10 @@ def parse_initial_blast_results(xml_results):
                 if hsp is not None:
                     query_from_element = hsp.find('Hsp_query-from')
                     query_from = query_from_element.text if query_from_element is not None else "N/A"
-
+                    
                     query_to_element = hsp.find('Hsp_query-to')
                     query_to = query_to_element.text if query_to_element is not None else "N/A"
-
+                    
                     evalue_element = hsp.find('Hsp_evalue')
                     evalue = evalue_element.text if evalue_element is not None else "N/A"
 
@@ -129,13 +131,13 @@ def fetch_genbank_data(accession):
         response = requests.get(url)
         response.raise_for_status()
         content = response.text
-
+        
         definition = "N/A"
         organism = "N/A"
-
+        
         definition = "N/A"
         organism = "N/A"
-
+        
         definition_lines = []
         in_definition_section = False
 
@@ -159,7 +161,7 @@ def fetch_genbank_data(accession):
                 else:
                     # Append the line, removing leading whitespace that might be present in multi-line definitions
                     definition_lines.append(line.strip())
-
+            
             if line.strip().startswith("ORGANISM"):
                 # This typically follows "SOURCE" and is a separate field
                 organism_line = line.split("ORGANISM")
@@ -168,7 +170,7 @@ def fetch_genbank_data(accession):
 
         if definition_lines:
             definition = " ".join(definition_lines)
-
+            
         return {"Definition": definition, "Organism": organism}
     except requests.exceptions.RequestException as e:
         print(f"Error fetching GenBank data for {accession}: {e}")
@@ -193,33 +195,49 @@ if __name__ == "__main__":
     if blast_program_choice == "blastn":
         while True:
             database_choice_input = input("Select database for blastn (est or nr/nt): ").strip().lower()
-            if database_choice_input in ["est", "nr/nt"]:
-                database_to_search = database_choice_input
+            if database_choice_input == "est":
+                database_to_search = "est"
+                break
+            elif database_choice_input == "nr/nt":
+                database_to_search = "nt" # Use "nt" for NCBI
                 break
             print("Invalid choice. Please enter 'est' or 'nr/nt'.")
     else: # blastx
-        database_to_search = "nr"
+        database_to_search = "nr" # blastx typically uses nr (protein database)
         print("Using 'nr' database for blastx.")
 
 
-    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' database...")
+    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
     try:
         rid_value = submit_blast_search(dna_sequence, database=database_to_search, program=blast_program_choice)
         print(f"Search submitted. RID: {rid_value}")
 
+        unknown_status_count = 0
+        max_unknown_retries = 5 # Allow up to 5 consecutive UNKNOWN statuses
+
         while True:
             status = check_blast_status(rid_value)
             print(f"Current search status: {status}")
+
             if status == "READY":
                 break
-            elif status in ["FAILED", "UNKNOWN", "ERROR"]:
-                print(f"Search failed or status is unknown. Status: {status}")
+            elif status == "UNKNOWN":
+                unknown_status_count += 1
+                if unknown_status_count >= max_unknown_retries:
+                    print(f"Search status remained 'UNKNOWN' for {max_unknown_retries} attempts. Assuming failure or issue with RID.")
+                    exit()
+                print(f"Status is 'UNKNOWN' (attempt {unknown_status_count}/{max_unknown_retries}). Retrying in 10 seconds...")
+            elif status in ["FAILED", "ERROR"]: # Separated UNKNOWN from this
+                print(f"Search failed with status: {status}")
                 exit()
+            else: # Reset unknown_status_count if status is something else (e.g. WAITING)
+                unknown_status_count = 0
+            
             time.sleep(10)
 
         print("Retrieving initial BLAST results...")
         xml_data = get_blast_results(rid_value)
-
+        
         print("\nParsing initial BLAST results...")
         initial_hits = parse_initial_blast_results(xml_data)
 
@@ -228,19 +246,19 @@ if __name__ == "__main__":
             exit()
 
         print(f"\nFound {len(initial_hits)} initial hits. Fetching GenBank data and filtering (processing up to top 20 initial hits for 'est' database)...")
-
+        
         final_results = []
         hits_processed = 0
         # Limit the number of initial hits to process to avoid excessive runtimes
         # We still aim for 3 final results.
-        for hit in initial_hits[:100]: # Process up to the first 20 hits for 'est'
+        for hit in initial_hits[:20]: # Process up to the first 20 hits for 'est'
             if len(final_results) >= 3:
-                break
+                break 
 
             hits_processed += 1
             print(f"Processing hit {hits_processed} (Accession {hit['Accession #']}). Aiming for {3 - len(final_results)} more valid results.")
             genbank_data = fetch_genbank_data(hit["Accession #"])
-
+            
             # Check for fetch/parse errors before checking organism
             if "Error" in genbank_data["Organism"] or "Error" in genbank_data["Definition"]:
                 print(f"  Skipped (Error fetching/parsing): {hit['Accession #']}")
@@ -254,7 +272,7 @@ if __name__ == "__main__":
                 print(f"  Added: {hit['Accession #']} - {genbank_data['Organism']}")
             else:
                 print(f"  Skipped (Landoltia punctata): {hit['Accession #']} - {genbank_data['Organism']}")
-
+            
             time.sleep(1) # Be respectful to NCBI servers
 
         if not final_results:
