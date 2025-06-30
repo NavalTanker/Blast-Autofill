@@ -2,12 +2,12 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 
-def submit_blast_search(sequence, database="est"):
-    """Submits a BLASTn search to NCBI and returns the Request ID (RID)."""
+def submit_blast_search(sequence, database="est", program="blastn"):
+    """Submits a BLAST search to NCBI and returns the Request ID (RID)."""
     url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
     params = {
         "CMD": "Put",
-        "PROGRAM": "blastn",
+        "PROGRAM": program,
         "DATABASE": database,
         "QUERY": sequence,
         "FORMAT_TYPE": "XML"
@@ -133,23 +133,41 @@ def fetch_genbank_data(accession):
         definition = "N/A"
         organism = "N/A"
 
+        definition = "N/A"
+        organism = "N/A"
+
+        definition_lines = []
         in_definition_section = False
-        current_definition_lines = []
 
         for line in content.splitlines():
             if line.startswith("DEFINITION"):
-                current_definition_lines.append(line[12:].strip()) # Skip "DEFINITION  "
+                # Remove "DEFINITION" keyword and leading/trailing whitespace
+                definition_lines.append(line[10:].strip())
                 in_definition_section = True
-            elif in_definition_section and line.startswith("ACCESSION"): # End of definition section
-                in_definition_section = False
             elif in_definition_section:
-                current_definition_lines.append(line.strip())
+                if line.startswith("ACCESSION"):
+                    # Stop capturing if we hit ACCESSION
+                    in_definition_section = False
+                elif line.startswith("VERSION"): # Another common section after DEFINITION
+                    in_definition_section = False
+                elif line.startswith("KEYWORDS"): # Another common section after DEFINITION
+                    in_definition_section = False
+                elif line.startswith("SOURCE"): # Another common section after DEFINITION
+                    in_definition_section = False
+                elif line.startswith("  ORGANISM"): # ORGANISM is part of SOURCE, stop before it if not stopped by SOURCE directly
+                    in_definition_section = False
+                else:
+                    # Append the line, removing leading whitespace that might be present in multi-line definitions
+                    definition_lines.append(line.strip())
 
             if line.strip().startswith("ORGANISM"):
-                organism = line.split("ORGANISM")[1].strip()
+                # This typically follows "SOURCE" and is a separate field
+                organism_line = line.split("ORGANISM")
+                if len(organism_line) > 1:
+                    organism = organism_line[1].strip()
 
-        if current_definition_lines:
-            definition = " ".join(current_definition_lines)
+        if definition_lines:
+            definition = " ".join(definition_lines)
 
         return {"Definition": definition, "Organism": organism}
     except requests.exceptions.RequestException as e:
@@ -162,11 +180,31 @@ def fetch_genbank_data(accession):
 
 if __name__ == "__main__":
     dna_sequence = "AGGAGAAGAAGAAAGAGGAGGAGAAACAGTCGACGTCTTCGTTTCTTACTCTGCATTCTGCGGGTGAATTCATGGACCGTGTGAAGAGGCTGAGCACGCAGAAGGCGGTGGTGATATTCAGCTCGAGCTCGTGCTGCATGTGCCACGCAGTCAAGGCCTTCTTCCAGGATCTCGGGGTGAACTACGCCGCCTACGAGCTCGACGAGGAACCCCACGGAAGGGAGATGGAGAAGGCTCTTCTCCGGCTAGTCGGCCGGAACCCGCCATTTCCGGCAGTCTACATCGGCGGCAAGCTTGTCGGCCCGACAGACCGCGTCATGTCCCTCCATCTCAGTGGCAAGCTTATGCCCATGCTGCGGGAAGCAGGCGCTAAATGGCTGTAGTCAGGCTCTCTGCGAAACCCTAACGCTAGCGGCTCTCGGTTAACCTGTGTTGACAAGTGGGCCGCGCTCTGTAGTCGTGCTCTTAAATGGGCTTGGGCCCGTGCTCCGTTTCATCTCCGTTTCTCTCCCAAAAGCAAATCCGTCCGTTAGAGTCGCACGTGGGGGAATCGGCAGACACGTGGATCTTCTTCTGTCAGAAATCGGCCTGACATTCCTCGTGGGCTTTTTCTTAATGGACTACTTACTTCGGCCCGCCTCTCAGATCGGCGAGCCCTCCTATGTACTCGGGCAGTTTAATTAATTTACAATTAATTAACCAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    database_to_search = "est" # Reverted to "est"
+    # database_to_search = "est" # Will be set by user input
 
-    print(f"Submitting BLAST search against '{database_to_search}' database...")
+    # Get user input for BLAST program
+    while True:
+        blast_program_choice = input("Select BLAST program (blastn or blastx): ").strip().lower()
+        if blast_program_choice in ["blastn", "blastx"]:
+            break
+        print("Invalid choice. Please enter 'blastn' or 'blastx'.")
+
+    # Get user input for database based on program choice
+    if blast_program_choice == "blastn":
+        while True:
+            database_choice_input = input("Select database for blastn (est or nr/nt): ").strip().lower()
+            if database_choice_input in ["est", "nr/nt"]:
+                database_to_search = database_choice_input
+                break
+            print("Invalid choice. Please enter 'est' or 'nr/nt'.")
+    else: # blastx
+        database_to_search = "nr"
+        print("Using 'nr' database for blastx.")
+
+
+    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' database...")
     try:
-        rid_value = submit_blast_search(dna_sequence, database_to_search)
+        rid_value = submit_blast_search(dna_sequence, database=database_to_search, program=blast_program_choice)
         print(f"Search submitted. RID: {rid_value}")
 
         while True:
