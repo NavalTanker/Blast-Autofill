@@ -2,6 +2,7 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 
+
 def submit_blast_search(sequence, database="est", program="blastn"):
     """Submits a BLAST search to NCBI and returns the Request ID (RID)."""
     url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
@@ -350,19 +351,16 @@ if __name__ == "__main__":
                 time.sleep(1)  # Wait after an error too
                 continue
 
-            # Apply filters: not Landoltia punctata and not an already selected organism
-            if "Landoltia punctata" not in details_data["Organism"] and \
-               details_data["Organism"] not in selected_organisms:
+            # Apply filter: organism must not have been selected already
+            if details_data["Organism"] not in selected_organisms:
                 hit["Definition"] = details_data["Definition"]
                 hit["Organism"] = details_data["Organism"]
                 final_results.append(hit)
                 selected_organisms.add(details_data["Organism"])
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
-            elif "Landoltia punctata" in details_data["Organism"]:
-                print(f"  Skipped (Landoltia punctata): {hit['Accession #']} - {details_data['Organism']}")
-            elif details_data["Organism"] in selected_organisms:
+            elif details_data["Organism"] in selected_organisms: # This condition implies it's a duplicate
                 print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
-            
+
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
