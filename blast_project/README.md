@@ -35,10 +35,13 @@ python main.py
 
 The script will first prompt you to:
 1.  **Select the BLAST program**: Enter `blastn` or `blastx`.
-2.  **Select the database** (if `blastn` was chosen): Enter `est` or `nr/nt`. If `blastx` was chosen, the `nr` database is automatically used.
+2.  **Select the database** (if `blastn` was chosen): Enter `est` or `nr/nt`.
+    *   If `est` is chosen, the "est" database (Expressed Sequence Tags) will be searched.
+    *   If `nr/nt` is chosen, the "nt" database (Nucleotide collection) will be searched. This is a comprehensive collection of nucleotide sequences.
+    *   If `blastx` was chosen as the program, the "nr" database (Non-redundant protein) is automatically used.
 
 Then, the script will:
-1. Submit a predefined DNA sequence to the NCBI BLAST service using your selected program and database.
+1. Submit a predefined DNA sequence to the NCBI BLAST service using your selected program and the corresponding NCBI database name (e.g., "nt" for the "nr/nt" choice).
 2. Periodically check the status of the search.
 3. Once the search is complete, retrieve the results in XML format.
 4. Parse these results to extract initial hit information.

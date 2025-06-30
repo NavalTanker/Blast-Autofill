@@ -195,16 +195,19 @@ if __name__ == "__main__":
     if blast_program_choice == "blastn":
         while True:
             database_choice_input = input("Select database for blastn (est or nr/nt): ").strip().lower()
-            if database_choice_input in ["est", "nr/nt"]:
-                database_to_search = database_choice_input
+            if database_choice_input == "est":
+                database_to_search = "est"
+                break
+            elif database_choice_input == "nr/nt":
+                database_to_search = "nt" # Use "nt" for NCBI
                 break
             print("Invalid choice. Please enter 'est' or 'nr/nt'.")
     else: # blastx
-        database_to_search = "nr"
+        database_to_search = "nr" # blastx typically uses nr (protein database)
         print("Using 'nr' database for blastx.")
 
 
-    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' database...")
+    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
     try:
         rid_value = submit_blast_search(dna_sequence, database=database_to_search, program=blast_program_choice)
         print(f"Search submitted. RID: {rid_value}")
