@@ -2,7 +2,6 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 
-
 def submit_blast_search(sequence, database="est", program="blastn"):
     """Submits a BLAST search to NCBI and returns the Request ID (RID)."""
     url = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
@@ -327,16 +326,17 @@ if __name__ == "__main__":
             f"\nFound {len(initial_hits)} initial hits. Fetching GenBank data and filtering (processing up to top 20 initial hits for 'est' database)...")
 
         final_results = []
+        selected_organisms = set()
         hits_processed = 0
         # Limit the number of initial hits to process to avoid excessive runtimes
-        # We still aim for 3 final results.
+        # We still aim for 3 final results from unique organisms.
         for hit in initial_hits[:100]:  # Process up to the first 100 hits
             if len(final_results) >= 3:
                 break
 
             hits_processed += 1
             print(
-                f"Processing hit {hits_processed} (Accession {hit['Accession #']}). Aiming for {3 - len(final_results)} more valid results.")
+                f"Processing hit {hits_processed} (Accession {hit['Accession #']}). Aiming for {3 - len(final_results)} more unique organism results.")
 
             details_data = None
             if blast_program_choice == "blastx":
@@ -350,14 +350,19 @@ if __name__ == "__main__":
                 time.sleep(1)  # Wait after an error too
                 continue
 
-            if "Landoltia punctata" not in details_data["Organism"]:
+            # Apply filters: not Landoltia punctata and not an already selected organism
+            if "Landoltia punctata" not in details_data["Organism"] and \
+               details_data["Organism"] not in selected_organisms:
                 hit["Definition"] = details_data["Definition"]
                 hit["Organism"] = details_data["Organism"]
                 final_results.append(hit)
-                print(f"  Added: {hit['Accession #']} - {details_data['Organism']}")
-            else:
+                selected_organisms.add(details_data["Organism"])
+                print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
+            elif "Landoltia punctata" in details_data["Organism"]:
                 print(f"  Skipped (Landoltia punctata): {hit['Accession #']} - {details_data['Organism']}")
-
+            elif details_data["Organism"] in selected_organisms:
+                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
+            
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
