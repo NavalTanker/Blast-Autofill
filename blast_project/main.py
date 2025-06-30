@@ -360,7 +360,7 @@ if __name__ == "__main__":
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
             elif details_data["Organism"] in selected_organisms: # This condition implies it's a duplicate
                 print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
-
+            
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
