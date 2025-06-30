@@ -195,7 +195,7 @@ if __name__ == "__main__":
         hits_processed = 0
         # Limit the number of initial hits to process to avoid excessive runtimes
         # We still aim for 3 final results.
-        for hit in initial_hits[:20]: # Process up to the first 20 hits for 'est'
+        for hit in initial_hits[:100]: # Process up to the first 20 hits for 'est'
             if len(final_results) >= 3:
                 break
 
