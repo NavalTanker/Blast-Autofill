@@ -12,6 +12,9 @@ def submit_blast_search(sequence, database="est", program="blastn"):
         "QUERY": sequence,
         "FORMAT_TYPE": "XML"
     }
+    if program == "blastn" and database == "nt":
+        params["NO_DATABASE_OVERRIDE"] = "true"
+
     response = requests.post(url, params=params)
     response.raise_for_status()  # Raise an exception for bad status codes
 
@@ -33,11 +36,12 @@ def submit_blast_search(sequence, database="est", program="blastn"):
                 if rid_element is not None:
                     rid = rid_element.text
         except ET.ParseError:
-            pass # Ignore parsing error if XML is not well-formed initially
+            pass  # Ignore parsing error if XML is not well-formed initially
 
     if not rid:
         raise ValueError("Could not extract RID from BLAST submission response.")
     return rid
+
 
 def check_blast_status(rid):
     """Checks the status of a BLAST search."""
@@ -45,13 +49,13 @@ def check_blast_status(rid):
     params = {
         "CMD": "Get",
         "RID": rid,
-        "FORMAT_OBJECT": "SearchInfo" 
+        "FORMAT_OBJECT": "SearchInfo"
     }
     response = requests.get(url, params=params)
     response.raise_for_status()
     # Status is usually in a QBlastInfo tag
     status = "UNKNOWN"
-    if "Status=" in response.text: # Fallback for older format
+    if "Status=" in response.text:  # Fallback for older format
         for line in response.text.splitlines():
             if "Status=" in line:
                 status = line.split("Status=")[1].strip()
@@ -63,11 +67,12 @@ def check_blast_status(rid):
             if qblast_info is not None:
                 status_element = qblast_info.find('Status')
                 if status_element is not None and status_element.text is not None:
-                    status = status_element.text.strip() # Ensure to strip whitespace
+                    status = status_element.text.strip()  # Ensure to strip whitespace
         except ET.ParseError:
             # If XML parsing fails, status remains "UNKNOWN" (or what was found by fallback)
-            print(f"Warning: Could not parse XML status response for RID {rid}. Response text (first 300 chars): {response.text[:300]}")
-            pass 
+            print(
+                f"Warning: Could not parse XML status response for RID {rid}. Response text (first 300 chars): {response.text[:300]}")
+            pass
     return status
 
 
@@ -83,8 +88,10 @@ def get_blast_results(rid):
     response.raise_for_status()
     return response.text
 
-def parse_initial_blast_results(xml_results):
-    """Parses basic BLAST XML results to get Accession, Query Start, Query End, E Value."""
+
+def parse_initial_blast_results(xml_results, query_sequence):
+    """Parses basic BLAST XML results to get Accession, Query Start, Query End, E Value,
+    and the corresponding start and end bases from the query sequence."""
     # This function will now only parse data directly available in the main BLAST XML.
     # Organism and full definition will be fetched later.
     results = []
@@ -94,19 +101,37 @@ def parse_initial_blast_results(xml_results):
             for hit in iteration.findall('.//Hit'):
                 accession_element = hit.find('Hit_accession')
                 accession = accession_element.text if accession_element is not None else "N/A"
-                
+
                 # Initial definition from BLAST XML (can be refined later)
                 # hit_def_element = hit.find('Hit_def')
                 # initial_def = hit_def_element.text if hit_def_element is not None else "N/A"
 
-                hsp = hit.find('.//Hsp') # Find the first HSP
+                hsp = hit.find('.//Hsp')  # Find the first HSP
                 if hsp is not None:
-                    query_from_element = hsp.find('Hsp_query-from')
-                    query_from = query_from_element.text if query_from_element is not None else "N/A"
-                    
-                    query_to_element = hsp.find('Hsp_query-to')
-                    query_to = query_to_element.text if query_to_element is not None else "N/A"
-                    
+                    query_from_text = hsp.find('Hsp_query-from').text if hsp.find(
+                        'Hsp_query-from') is not None else None
+                    query_to_text = hsp.find('Hsp_query-to').text if hsp.find('Hsp_query-to') is not None else None
+
+                    query_from = "N/A"
+                    query_to = "N/A"
+                    query_start_base = "N/A"
+                    query_end_base = "N/A"
+
+                    if query_from_text and query_to_text:
+                        try:
+                            q_from = int(query_from_text)
+                            q_to = int(query_to_text)
+                            query_from = str(q_from)
+                            query_to = str(q_to)
+                            # Adjust for 0-based indexing and ensure within bounds
+                            if 0 < q_from <= len(query_sequence):
+                                query_start_base = query_sequence[q_from - 1]
+                            if 0 < q_to <= len(query_sequence):
+                                query_end_base = query_sequence[q_to - 1]
+                        except ValueError:
+                            # Handle cases where conversion to int might fail, though unlikely for these fields
+                            pass
+
                     evalue_element = hsp.find('Hsp_evalue')
                     evalue = evalue_element.text if evalue_element is not None else "N/A"
 
@@ -115,7 +140,9 @@ def parse_initial_blast_results(xml_results):
                         # "Definition": initial_def, # Will be fetched from GenBank
                         # "Organism": "N/A",       # Will be fetched from GenBank
                         "Query Start": query_from,
+                        "Query Start Base": query_start_base,
                         "Query End": query_to,
+                        "Query End Base": query_end_base,
                         "E Value": evalue
                     })
     except ET.ParseError as e:
@@ -124,6 +151,7 @@ def parse_initial_blast_results(xml_results):
         return []
     return results
 
+
 def fetch_genbank_data(accession):
     """Fetches and parses GenBank page for Definition and Organism."""
     url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id={accession}&rettype=gb&retmode=text"
@@ -131,13 +159,10 @@ def fetch_genbank_data(accession):
         response = requests.get(url)
         response.raise_for_status()
         content = response.text
-        
+
         definition = "N/A"
         organism = "N/A"
-        
-        definition = "N/A"
-        organism = "N/A"
-        
+
         definition_lines = []
         in_definition_section = False
 
@@ -150,18 +175,19 @@ def fetch_genbank_data(accession):
                 if line.startswith("ACCESSION"):
                     # Stop capturing if we hit ACCESSION
                     in_definition_section = False
-                elif line.startswith("VERSION"): # Another common section after DEFINITION
+                elif line.startswith("VERSION"):  # Another common section after DEFINITION
                     in_definition_section = False
-                elif line.startswith("KEYWORDS"): # Another common section after DEFINITION
+                elif line.startswith("KEYWORDS"):  # Another common section after DEFINITION
                     in_definition_section = False
-                elif line.startswith("SOURCE"): # Another common section after DEFINITION
+                elif line.startswith("SOURCE"):  # Another common section after DEFINITION
                     in_definition_section = False
-                elif line.startswith("  ORGANISM"): # ORGANISM is part of SOURCE, stop before it if not stopped by SOURCE directly
+                elif line.startswith(
+                        "  ORGANISM"):  # ORGANISM is part of SOURCE, stop before it if not stopped by SOURCE directly
                     in_definition_section = False
                 else:
                     # Append the line, removing leading whitespace that might be present in multi-line definitions
                     definition_lines.append(line.strip())
-            
+
             if line.strip().startswith("ORGANISM"):
                 # This typically follows "SOURCE" and is a separate field
                 organism_line = line.split("ORGANISM")
@@ -170,13 +196,62 @@ def fetch_genbank_data(accession):
 
         if definition_lines:
             definition = " ".join(definition_lines)
-            
+
         return {"Definition": definition, "Organism": organism}
     except requests.exceptions.RequestException as e:
         print(f"Error fetching GenBank data for {accession}: {e}")
         return {"Definition": "Error fetching", "Organism": "Error fetching"}
     except Exception as e:
         print(f"Error parsing GenBank data for {accession}: {e}")
+        return {"Definition": "Error parsing", "Organism": "Error parsing"}
+
+
+def fetch_protein_data(accession):
+    """Fetches and parses protein GenBank page for Definition and Organism."""
+    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=protein&id={accession}&rettype=gb&retmode=text"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        content = response.text
+
+        definition = "N/A"
+        organism = "N/A"
+
+        definition_lines = []
+        in_definition_section = False
+
+        for line in content.splitlines():
+            if line.startswith("DEFINITION"):
+                definition_lines.append(line[10:].strip())
+                in_definition_section = True
+            elif in_definition_section:
+                if line.startswith("ACCESSION"):
+                    in_definition_section = False
+                elif line.startswith("VERSION"):
+                    in_definition_section = False
+                elif line.startswith("KEYWORDS"):
+                    in_definition_section = False
+                elif line.startswith("SOURCE"):
+                    in_definition_section = False
+                elif line.startswith("  ORGANISM"):
+                    in_definition_section = False
+                else:
+                    definition_lines.append(line.strip())
+
+            if line.strip().startswith("ORGANISM"):
+                organism_line = line.split("ORGANISM")
+                if len(organism_line) > 1:
+                    organism = organism_line[1].strip()
+
+        if definition_lines:
+            definition = " ".join(definition_lines)
+
+        return {"Definition": definition, "Organism": organism}
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching protein data for {accession}: {e}")
+        return {"Definition": "Error fetching", "Organism": "Error fetching"}
+    except Exception as e:
+        print(f"Error parsing protein data for {accession}: {e}")
         return {"Definition": "Error parsing", "Organism": "Error parsing"}
 
 
@@ -199,21 +274,21 @@ if __name__ == "__main__":
                 database_to_search = "est"
                 break
             elif database_choice_input == "nr/nt":
-                database_to_search = "nt" # Use "nt" for NCBI
+                database_to_search = "nt"  # Use "nt" for NCBI
                 break
             print("Invalid choice. Please enter 'est' or 'nr/nt'.")
-    else: # blastx
-        database_to_search = "nr" # blastx typically uses nr (protein database)
+    else:  # blastx
+        database_to_search = "nr"  # blastx typically uses nr (protein database)
         print("Using 'nr' database for blastx.")
 
-
-    print(f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
+    print(
+        f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
     try:
         rid_value = submit_blast_search(dna_sequence, database=database_to_search, program=blast_program_choice)
         print(f"Search submitted. RID: {rid_value}")
 
         unknown_status_count = 0
-        max_unknown_retries = 5 # Allow up to 5 consecutive UNKNOWN statuses
+        max_unknown_retries = 5  # Allow up to 5 consecutive UNKNOWN statuses
 
         while True:
             status = check_blast_status(rid_value)
@@ -224,56 +299,71 @@ if __name__ == "__main__":
             elif status == "UNKNOWN":
                 unknown_status_count += 1
                 if unknown_status_count >= max_unknown_retries:
-                    print(f"Search status remained 'UNKNOWN' for {max_unknown_retries} attempts. Assuming failure or issue with RID.")
+                    print(
+                        f"Search status remained 'UNKNOWN' for {max_unknown_retries} attempts. Assuming failure or issue with RID.")
                     exit()
-                print(f"Status is 'UNKNOWN' (attempt {unknown_status_count}/{max_unknown_retries}). Retrying in 10 seconds...")
-            elif status in ["FAILED", "ERROR"]: # Separated UNKNOWN from this
+                print(
+                    f"Status is 'UNKNOWN' (attempt {unknown_status_count}/{max_unknown_retries}). Retrying in 10 seconds...")
+            elif status in ["FAILED", "ERROR"]:  # Separated UNKNOWN from this
                 print(f"Search failed with status: {status}")
                 exit()
-            else: # Reset unknown_status_count if status is something else (e.g. WAITING)
+            else:  # Reset unknown_status_count if status is something else (e.g. WAITING)
                 unknown_status_count = 0
-            
+
             time.sleep(10)
 
         print("Retrieving initial BLAST results...")
         xml_data = get_blast_results(rid_value)
-        
+
         print("\nParsing initial BLAST results...")
-        initial_hits = parse_initial_blast_results(xml_data)
+        initial_hits = parse_initial_blast_results(xml_data, dna_sequence)
 
         if not initial_hits:
             print("No initial hits found or failed to parse.")
             exit()
 
-        print(f"\nFound {len(initial_hits)} initial hits. Fetching GenBank data and filtering (processing up to top 20 initial hits for 'est' database)...")
-        
+        print(
+            f"\nFound {len(initial_hits)} initial hits. Fetching GenBank data and filtering (processing up to top 20 initial hits for 'est' database)...")
+
         final_results = []
+        selected_organisms = set()
         hits_processed = 0
         # Limit the number of initial hits to process to avoid excessive runtimes
-        # We still aim for 3 final results.
-        for hit in initial_hits[:100]: # Process up to the first 100 hits for 'est'
+        # We still aim for 3 final results from unique organisms.
+        for hit in initial_hits[:100]:  # Process up to the first 100 hits
             if len(final_results) >= 3:
-                break 
+                break
 
             hits_processed += 1
-            print(f"Processing hit {hits_processed} (Accession {hit['Accession #']}). Aiming for {3 - len(final_results)} more valid results.")
-            genbank_data = fetch_genbank_data(hit["Accession #"])
-            
+            print(
+                f"Processing hit {hits_processed} (Accession {hit['Accession #']}). Aiming for {3 - len(final_results)} more unique organism results.")
+
+            details_data = None
+            if blast_program_choice == "blastx":
+                details_data = fetch_protein_data(hit["Accession #"])
+            else:  # blastn or other nucleotide programs
+                details_data = fetch_genbank_data(hit["Accession #"])
+
             # Check for fetch/parse errors before checking organism
-            if "Error" in genbank_data["Organism"] or "Error" in genbank_data["Definition"]:
+            if "Error" in details_data["Organism"] or "Error" in details_data["Definition"]:
                 print(f"  Skipped (Error fetching/parsing): {hit['Accession #']}")
-                time.sleep(1) # Wait after an error too
+                time.sleep(1)  # Wait after an error too
                 continue
 
-            if "Landoltia punctata" not in genbank_data["Organism"]:
-                hit["Definition"] = genbank_data["Definition"]
-                hit["Organism"] = genbank_data["Organism"]
+            # Apply filters: not Landoltia punctata and not an already selected organism
+            if "Landoltia punctata" not in details_data["Organism"] and \
+               details_data["Organism"] not in selected_organisms:
+                hit["Definition"] = details_data["Definition"]
+                hit["Organism"] = details_data["Organism"]
                 final_results.append(hit)
-                print(f"  Added: {hit['Accession #']} - {genbank_data['Organism']}")
-            else:
-                print(f"  Skipped (Landoltia punctata): {hit['Accession #']} - {genbank_data['Organism']}")
+                selected_organisms.add(details_data["Organism"])
+                print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
+            elif "Landoltia punctata" in details_data["Organism"]:
+                print(f"  Skipped (Landoltia punctata): {hit['Accession #']} - {details_data['Organism']}")
+            elif details_data["Organism"] in selected_organisms:
+                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
             
-            time.sleep(1) # Be respectful to NCBI servers
+            time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
             print("No results found after filtering for 'Landoltia punctata' and fetching details.")
@@ -288,13 +378,14 @@ if __name__ == "__main__":
                     # Get the exponent
                     exponent = int(f"{e_value_float:e}".split('e')[-1])
                     # Get the significand and round it to the nearest integer
-                    significand = round(e_value_float / (10**exponent))
+                    significand = round(e_value_float / (10 ** exponent))
                     formatted_e_value = f"{int(significand)}e{exponent}"
                 except ValueError:
-                    formatted_e_value = item['E Value'] # Fallback if not a float or other error
-                except Exception: # Catch any other formatting errors
-                     formatted_e_value = item['E Value'] # Fallback
-                print(f"| {item['Accession #']} | {item['Definition'][:50]}... | {item['Organism']} | {item['Query Start']} | {item['Query End']} | {formatted_e_value} |")
+                    formatted_e_value = item['E Value']  # Fallback if not a float or other error
+                except Exception:  # Catch any other formatting errors
+                    formatted_e_value = item['E Value']  # Fallback
+                print(
+                    f"| {item['Accession #']} | {item['Definition']} | {item['Organism']} | {item['Query Start Base']}{item['Query Start']} | {item['Query End Base']}{item['Query End']} | {formatted_e_value} |")
 
     except requests.exceptions.RequestException as e:
         print(f"An HTTP error occurred: {e}")
