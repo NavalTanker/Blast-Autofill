@@ -33,21 +33,24 @@ To run the BLAST search and analysis:
 python main.py
 ```
 
-The script will:
-1. Submit a predefined DNA sequence to the NCBI BLASTn service against the 'est' database.
+The script will first prompt you to:
+1.  **Select the BLAST program**: Enter `blastn` or `blastx`.
+2.  **Select the database** (if `blastn` was chosen): Enter `est` or `nr/nt`. If `blastx` was chosen, the `nr` database is automatically used.
+
+Then, the script will:
+1. Submit a predefined DNA sequence to the NCBI BLAST service using your selected program and database.
 2. Periodically check the status of the search.
 3. Once the search is complete, retrieve the results in XML format.
 4. Parse these results to extract initial hit information.
-5. Fetch detailed GenBank data (Definition and Organism) for each hit.
+5. Fetch detailed GenBank data (full Definition and Organism) for each hit.
 6. Filter out results where the organism is "Landoltia punctata".
-7. Print the top 3 final results (excluding "Landoltia punctata") in a table format.
+7. Print the top 3 final results (excluding "Landoltia punctata") in a table format, including the full definition.
 
 ### Output
 The script will print status updates to the console, including the RID (Request ID) of the BLAST search, current search status, processing steps, and finally, the formatted table of results.
 
 ### Customization
 - **DNA Sequence**: You can change the `dna_sequence` variable in `main.py` to your sequence of interest.
-- **BLAST Database**: The `database_to_search` variable in `main.py` can be changed to other BLAST databases (e.g., "nr", "nt"). Note that parsing and filtering logic might need adjustments for different database outputs or requirements.
 - **Number of Results**: The script aims to find 3 results after filtering. This can be adjusted by changing the condition `if len(final_results) >= 3:` and the slicing `initial_hits[:20]` if more initial hits need to be processed.
 
 ## Note
