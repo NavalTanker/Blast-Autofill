@@ -1,2 +1,2 @@
 # Blast-Autofill
-Autofills from NCBI's Blastn or Blastx
+This program autofills from NCBI's blastn or blastx
