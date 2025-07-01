@@ -129,7 +129,7 @@ def parse_initial_blast_results(xml_results, query_sequence, blast_program_choic
                 else: # For blastn and others
                     accession_element = hit.find('Hit_accession')
                     accession = accession_element.text if accession_element is not None else "N/A"
-
+                
                 hit_def_element = hit.find('Hit_def')
                 raw_hit_def = hit_def_element.text if hit_def_element is not None else "N/A"
 
@@ -151,25 +151,11 @@ def parse_initial_blast_results(xml_results, query_sequence, blast_program_choic
                             query_from = str(q_from) # Keep as string for dict
                             query_to = str(q_to)   # Keep as string for dict
 
-                            if blast_program_choice == "blastx":
-                                hsp_qseq_element = hsp.find('Hsp_qseq')
-                                if hsp_qseq_element is not None and hsp_qseq_element.text:
-                                    hsp_qseq_text = hsp_qseq_element.text
-                                    if len(hsp_qseq_text) > 0:
-                                        query_start_base = hsp_qseq_text[0]
-                                        query_end_base = hsp_qseq_text[-1]
-                                    else: # Should ideally not happen if Hsp_qseq has text but is empty
-                                        query_start_base = "?"
-                                        query_end_base = "?"
-                                else: # Hsp_qseq not found or empty
-                                    query_start_base = "?"
-                                    query_end_base = "?"
-                            else: # blastn
-                                # Adjust for 0-based indexing and ensure within bounds for nucleotide query
-                                if 0 < q_from <= len(query_sequence):
-                                    query_start_base = query_sequence[q_from - 1]
-                                if 0 < q_to <= len(query_sequence):
-                                    query_end_base = query_sequence[q_to - 1]
+                            # Always use original query_sequence for start/end bases
+                            if 0 < q_from <= len(query_sequence):
+                                query_start_base = query_sequence[q_from - 1]
+                            if 0 < q_to <= len(query_sequence):
+                                query_end_base = query_sequence[q_to - 1]
                         except ValueError:
                             # query_from, query_to will remain "N/A" if int conversion fails
                             # query_start_base, query_end_base will also remain "N/A"
@@ -406,13 +392,13 @@ if __name__ == "__main__":
 
             # Assign definition based on user choice
             raw_definition = hit.get("Hit_def_raw", "") # Get it regardless of choice for potential use
-
+            
             if definition_format_choice == "short":
                 current_def_portion = raw_definition
                 # First, handle cases like "def1 [Org1] > def2 [Org2]" by taking text before first ">"
                 if ' >' in current_def_portion:
                     current_def_portion = current_def_portion.split(' >', 1)[0].strip()
-
+                
                 # Then, find the text before the first "[Organism]"
                 first_bracket_start = current_def_portion.find(' [')
                 if first_bracket_start != -1:
@@ -427,19 +413,19 @@ if __name__ == "__main__":
                 if short_def:
                     hit["Definition"] = short_def
                 else: # Fallback if short_def is empty after all parsing attempts
-                    hit["Definition"] = details_data["Definition"]
-                    if raw_definition and not short_def:
+                    hit["Definition"] = details_data["Definition"] 
+                    if raw_definition and not short_def: 
                          print(f"    Note: Parsed short definition for {hit['Accession #']} was empty (from '{raw_definition}'), used full definition.")
                     elif not raw_definition:
                          print(f"    Note: No raw definition available for {hit['Accession #']}, used full definition.")
             else: # Full definition choice
                 hit["Definition"] = details_data["Definition"]
-
+            
             hit["Organism"] = details_data["Organism"] # Always assign organism
 
             # Apply filters: optional Landoltia exclusion and unique organism
             organism_is_landoltia = details_data["Organism"] == "Landoltia punctata"
-
+            
             if exclude_landoltia and organism_is_landoltia:
                 print(f"  Skipped (Landoltia punctata excluded by user): {hit['Accession #']} - {details_data['Organism']}")
             elif details_data["Organism"] in selected_organisms:
@@ -449,7 +435,7 @@ if __name__ == "__main__":
                 final_results.append(hit)
                 selected_organisms.add(details_data["Organism"])
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
-
+            
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
