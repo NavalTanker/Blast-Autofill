@@ -1,10 +1,12 @@
 # Attempt to suppress NotOpenSSLWarning by placing this at the very top
 import warnings
+
 try:
     from urllib3.exceptions import NotOpenSSLWarning
+
     warnings.filterwarnings('ignore', category=NotOpenSSLWarning)
 except ImportError:
-    pass # urllib3 or NotOpenSSLWarning not available
+    pass  # urllib3 or NotOpenSSLWarning not available
 
 import requests
 import time
@@ -24,7 +26,7 @@ def submit_blast_search(sequence, database="est", program="blastn"):
     if program == "blastn" and database == "nt":
         params["NO_DATABASE_OVERRIDE"] = "true"
     if program == "blastx":
-        params["FILTER"] = "F" # Explicitly disable low-complexity filter for blastx
+        params["FILTER"] = "F"  # Explicitly disable low-complexity filter for blastx
 
     response = requests.post(url, params=params)
     response.raise_for_status()  # Raise an exception for bad status codes
@@ -117,19 +119,21 @@ def parse_initial_blast_results(xml_results, query_sequence, blast_program_choic
                     # Example Hit_id: gi|55250001|ref|NP_001005225.1|
                     # or sometimes just 'ref|NP_001005225.1|' or similar from other dbs
                     parts = hit_id_text.split('|')
-                    if len(parts) >= 4 and parts[2] in ["ref", "pdb", "sp", "gb", "emb", "dbj"]: # Check for common prefixes
+                    if len(parts) >= 4 and parts[2] in ["ref", "pdb", "sp", "gb", "emb",
+                                                        "dbj"]:  # Check for common prefixes
                         accession = parts[3]
-                    elif len(parts) >= 2 and parts[0] in ["ref", "pdb", "sp", "gb", "emb", "dbj"]: # Handles cases like 'ref|ACCESSION|'
-                         accession = parts[1]
-                    else: # Fallback or if ID format is simpler e.g. from command line blast XML
+                    elif len(parts) >= 2 and parts[0] in ["ref", "pdb", "sp", "gb", "emb",
+                                                          "dbj"]:  # Handles cases like 'ref|ACCESSION|'
+                        accession = parts[1]
+                    else:  # Fallback or if ID format is simpler e.g. from command line blast XML
                         accession = hit.find('Hit_accession').text if hit.find('Hit_accession') is not None else "N/A"
                         # If it's a simple accession without version, try to retain it.
                         # If Hit_id was present but unparsable to a versioned ID, this might be non-ideal.
                         # However, typical NCBI XML2 for blastx has parseable Hit_id.
-                else: # For blastn and others
+                else:  # For blastn and others
                     accession_element = hit.find('Hit_accession')
                     accession = accession_element.text if accession_element is not None else "N/A"
-                
+
                 hit_def_element = hit.find('Hit_def')
                 raw_hit_def = hit_def_element.text if hit_def_element is not None else "N/A"
 
@@ -148,8 +152,8 @@ def parse_initial_blast_results(xml_results, query_sequence, blast_program_choic
                         try:
                             q_from = int(query_from_text)
                             q_to = int(query_to_text)
-                            query_from = str(q_from) # Keep as string for dict
-                            query_to = str(q_to)   # Keep as string for dict
+                            query_from = str(q_from)  # Keep as string for dict
+                            query_to = str(q_to)  # Keep as string for dict
 
                             # Always use original query_sequence for start/end bases
                             if 0 < q_from <= len(query_sequence):
@@ -315,11 +319,12 @@ if __name__ == "__main__":
     exclude_landoltia_input = input("Exclude 'Landoltia punctata' from results? (yes/no, default no): ").strip().lower()
     exclude_landoltia = exclude_landoltia_input == "yes"
 
-    definition_format_choice_input = input("Use full-length definition or shortened version from initial BLAST hit? (full/short, default full): ").strip().lower()
+    definition_format_choice_input = input(
+        "Use full-length definition or shortened version from initial BLAST hit? (full/short, default full): ").strip().lower()
     if definition_format_choice_input == "short":
         definition_format_choice = "short"
     else:
-        definition_format_choice = "full" # Default to full
+        definition_format_choice = "full"  # Default to full
 
     print(
         f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
@@ -391,14 +396,14 @@ if __name__ == "__main__":
                 continue
 
             # Assign definition based on user choice
-            raw_definition = hit.get("Hit_def_raw", "") # Get it regardless of choice for potential use
-            
+            raw_definition = hit.get("Hit_def_raw", "")  # Get it regardless of choice for potential use
+
             if definition_format_choice == "short":
                 current_def_portion = raw_definition
                 # First, handle cases like "def1 [Org1] > def2 [Org2]" by taking text before first ">"
                 if ' >' in current_def_portion:
                     current_def_portion = current_def_portion.split(' >', 1)[0].strip()
-                
+
                 # Then, find the text before the first "[Organism]"
                 first_bracket_start = current_def_portion.find(' [')
                 if first_bracket_start != -1:
@@ -412,22 +417,24 @@ if __name__ == "__main__":
 
                 if short_def:
                     hit["Definition"] = short_def
-                else: # Fallback if short_def is empty after all parsing attempts
-                    hit["Definition"] = details_data["Definition"] 
-                    if raw_definition and not short_def: 
-                         print(f"    Note: Parsed short definition for {hit['Accession #']} was empty (from '{raw_definition}'), used full definition.")
+                else:  # Fallback if short_def is empty after all parsing attempts
+                    hit["Definition"] = details_data["Definition"]
+                    if raw_definition and not short_def:
+                        print(
+                            f"    Note: Parsed short definition for {hit['Accession #']} was empty (from '{raw_definition}'), used full definition.")
                     elif not raw_definition:
-                         print(f"    Note: No raw definition available for {hit['Accession #']}, used full definition.")
-            else: # Full definition choice
+                        print(f"    Note: No raw definition available for {hit['Accession #']}, used full definition.")
+            else:  # Full definition choice
                 hit["Definition"] = details_data["Definition"]
-            
-            hit["Organism"] = details_data["Organism"] # Always assign organism
+
+            hit["Organism"] = details_data["Organism"]  # Always assign organism
 
             # Apply filters: optional Landoltia exclusion and unique organism
             organism_is_landoltia = details_data["Organism"] == "Landoltia punctata"
-            
+
             if exclude_landoltia and organism_is_landoltia:
-                print(f"  Skipped (Landoltia punctata excluded by user): {hit['Accession #']} - {details_data['Organism']}")
+                print(
+                    f"  Skipped (Landoltia punctata excluded by user): {hit['Accession #']} - {details_data['Organism']}")
             elif details_data["Organism"] in selected_organisms:
                 print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
             else:
@@ -435,7 +442,7 @@ if __name__ == "__main__":
                 final_results.append(hit)
                 selected_organisms.add(details_data["Organism"])
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
-            
+
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
