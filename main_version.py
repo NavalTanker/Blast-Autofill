@@ -1,3 +1,13 @@
+# Attempt to suppress NotOpenSSLWarning by placing this at the very top
+import warnings
+
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+
+    warnings.filterwarnings('ignore', category=NotOpenSSLWarning)
+except ImportError:
+    pass  # urllib3 or NotOpenSSLWarning not available
+
 import requests
 import time
 import xml.etree.ElementTree as ET
@@ -15,6 +25,8 @@ def submit_blast_search(sequence, database="est", program="blastn"):
     }
     if program == "blastn" and database == "nt":
         params["NO_DATABASE_OVERRIDE"] = "true"
+    if program == "blastx":
+        params["FILTER"] = "F"  # Explicitly disable low-complexity filter for blastx
 
     response = requests.post(url, params=params)
     response.raise_for_status()  # Raise an exception for bad status codes
@@ -90,9 +102,10 @@ def get_blast_results(rid):
     return response.text
 
 
-def parse_initial_blast_results(xml_results, query_sequence):
+def parse_initial_blast_results(xml_results, query_sequence, blast_program_choice):
     """Parses basic BLAST XML results to get Accession, Query Start, Query End, E Value,
-    and the corresponding start and end bases from the query sequence."""
+    and the corresponding start and end bases from the query sequence.
+    Handles blastx specific parsing for accession and query bases (amino acids)."""
     # This function will now only parse data directly available in the main BLAST XML.
     # Organism and full definition will be fetched later.
     results = []
@@ -100,12 +113,29 @@ def parse_initial_blast_results(xml_results, query_sequence):
         root = ET.fromstring(xml_results)
         for iteration in root.findall('.//Iteration'):
             for hit in iteration.findall('.//Hit'):
-                accession_element = hit.find('Hit_accession')
-                accession = accession_element.text if accession_element is not None else "N/A"
+                accession = "N/A"
+                if blast_program_choice == "blastx":
+                    hit_id_text = hit.find('Hit_id').text if hit.find('Hit_id') is not None else ""
+                    # Example Hit_id: gi|55250001|ref|NP_001005225.1|
+                    # or sometimes just 'ref|NP_001005225.1|' or similar from other dbs
+                    parts = hit_id_text.split('|')
+                    if len(parts) >= 4 and parts[2] in ["ref", "pdb", "sp", "gb", "emb",
+                                                        "dbj"]:  # Check for common prefixes
+                        accession = parts[3]
+                    elif len(parts) >= 2 and parts[0] in ["ref", "pdb", "sp", "gb", "emb",
+                                                          "dbj"]:  # Handles cases like 'ref|ACCESSION|'
+                        accession = parts[1]
+                    else:  # Fallback or if ID format is simpler e.g. from command line blast XML
+                        accession = hit.find('Hit_accession').text if hit.find('Hit_accession') is not None else "N/A"
+                        # If it's a simple accession without version, try to retain it.
+                        # If Hit_id was present but unparsable to a versioned ID, this might be non-ideal.
+                        # However, typical NCBI XML2 for blastx has parseable Hit_id.
+                else:  # For blastn and others
+                    accession_element = hit.find('Hit_accession')
+                    accession = accession_element.text if accession_element is not None else "N/A"
 
-                # Initial definition from BLAST XML (can be refined later)
-                # hit_def_element = hit.find('Hit_def')
-                # initial_def = hit_def_element.text if hit_def_element is not None else "N/A"
+                hit_def_element = hit.find('Hit_def')
+                raw_hit_def = hit_def_element.text if hit_def_element is not None else "N/A"
 
                 hsp = hit.find('.//Hsp')  # Find the first HSP
                 if hsp is not None:
@@ -122,15 +152,17 @@ def parse_initial_blast_results(xml_results, query_sequence):
                         try:
                             q_from = int(query_from_text)
                             q_to = int(query_to_text)
-                            query_from = str(q_from)
-                            query_to = str(q_to)
-                            # Adjust for 0-based indexing and ensure within bounds
+                            query_from = str(q_from)  # Keep as string for dict
+                            query_to = str(q_to)  # Keep as string for dict
+
+                            # Always use original query_sequence for start/end bases
                             if 0 < q_from <= len(query_sequence):
                                 query_start_base = query_sequence[q_from - 1]
                             if 0 < q_to <= len(query_sequence):
                                 query_end_base = query_sequence[q_to - 1]
                         except ValueError:
-                            # Handle cases where conversion to int might fail, though unlikely for these fields
+                            # query_from, query_to will remain "N/A" if int conversion fails
+                            # query_start_base, query_end_base will also remain "N/A"
                             pass
 
                     evalue_element = hsp.find('Hsp_evalue')
@@ -144,7 +176,8 @@ def parse_initial_blast_results(xml_results, query_sequence):
                         "Query Start Base": query_start_base,
                         "Query End": query_to,
                         "Query End Base": query_end_base,
-                        "E Value": evalue
+                        "E Value": evalue,
+                        "Hit_def_raw": raw_hit_def
                     })
     except ET.ParseError as e:
         print(f"Error parsing initial BLAST XML: {e}")
@@ -282,6 +315,17 @@ if __name__ == "__main__":
         database_to_search = "nr"  # blastx typically uses nr (protein database)
         print("Using 'nr' database for blastx.")
 
+    # User preferences
+    exclude_landoltia_input = input("Exclude 'Landoltia punctata' from results? (yes/no, default no): ").strip().lower()
+    exclude_landoltia = exclude_landoltia_input == "yes"
+
+    definition_format_choice_input = input(
+        "Use full-length definition or shortened version from initial BLAST hit? (full/short, default full): ").strip().lower()
+    if definition_format_choice_input == "short":
+        definition_format_choice = "short"
+    else:
+        definition_format_choice = "full"  # Default to full
+
     print(
         f"Submitting BLAST {blast_program_choice} search against '{database_to_search}' (NCBI name: {database_to_search})...")
     try:
@@ -317,7 +361,7 @@ if __name__ == "__main__":
         xml_data = get_blast_results(rid_value)
 
         print("\nParsing initial BLAST results...")
-        initial_hits = parse_initial_blast_results(xml_data, dna_sequence)
+        initial_hits = parse_initial_blast_results(xml_data, dna_sequence, blast_program_choice)
 
         if not initial_hits:
             print("No initial hits found or failed to parse.")
@@ -351,16 +395,54 @@ if __name__ == "__main__":
                 time.sleep(1)  # Wait after an error too
                 continue
 
-            # Apply filter: organism must not have been selected already
-            if details_data["Organism"] not in selected_organisms:
+            # Assign definition based on user choice
+            raw_definition = hit.get("Hit_def_raw", "")  # Get it regardless of choice for potential use
+
+            if definition_format_choice == "short":
+                current_def_portion = raw_definition
+                # First, handle cases like "def1 [Org1] > def2 [Org2]" by taking text before first ">"
+                if ' >' in current_def_portion:
+                    current_def_portion = current_def_portion.split(' >', 1)[0].strip()
+
+                # Then, find the text before the first "[Organism]"
+                first_bracket_start = current_def_portion.find(' [')
+                if first_bracket_start != -1:
+                    # Check if this bracket seems to be an organism by also checking for a closing ']'
+                    # This is a heuristic; a more robust way would be regex or checking against known organism list
+                    # For now, just assume if '[' is found, it's relevant
+                    short_def = current_def_portion[:first_bracket_start].strip()
+                else:
+                    # No bracket found, so the whole (potentially already ">" truncated) string is the def
+                    short_def = current_def_portion.strip()
+
+                if short_def:
+                    hit["Definition"] = short_def
+                else:  # Fallback if short_def is empty after all parsing attempts
+                    hit["Definition"] = details_data["Definition"]
+                    if raw_definition and not short_def:
+                        print(
+                            f"    Note: Parsed short definition for {hit['Accession #']} was empty (from '{raw_definition}'), used full definition.")
+                    elif not raw_definition:
+                        print(f"    Note: No raw definition available for {hit['Accession #']}, used full definition.")
+            else:  # Full definition choice
                 hit["Definition"] = details_data["Definition"]
-                hit["Organism"] = details_data["Organism"]
+
+            hit["Organism"] = details_data["Organism"]  # Always assign organism
+
+            # Apply filters: optional Landoltia exclusion and unique organism
+            organism_is_landoltia = details_data["Organism"] == "Landoltia punctata"
+
+            if exclude_landoltia and organism_is_landoltia:
+                print(
+                    f"  Skipped (Landoltia punctata excluded by user): {hit['Accession #']} - {details_data['Organism']}")
+            elif details_data["Organism"] in selected_organisms:
+                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
+            else:
+                # If not excluded Landoltia (or not Landoltia at all) AND organism is new
                 final_results.append(hit)
                 selected_organisms.add(details_data["Organism"])
                 print(f"  Added: {hit['Accession #']} - {details_data['Organism']} (New unique organism)")
-            elif details_data["Organism"] in selected_organisms: # This condition implies it's a duplicate
-                print(f"  Skipped (Organism already selected): {hit['Accession #']} - {details_data['Organism']}")
-            
+
             time.sleep(1)  # Be respectful to NCBI servers
 
         if not final_results:
