@@ -1,61 +1,43 @@
-# Project Title
+# NCBI BLAST GUI Application
 
-A brief description of the project.
+This project is a desktop application with a Graphical User Interface (GUI) for interacting with the NCBI BLAST service. It allows users to submit BLAST searches using a visual interface and view results within the application.
 
-## Structure
+## Features
+- Submit BLAST searches (blastn, blastx) to NCBI.
+- Select target databases (nt, nr, est, etc.).
+- Input sequence directly into a text area.
+- Configure common BLAST parameters (e.g., exclude Landoltia, definition format).
+- View search status and results within the GUI.
 
-This project is organized into the following layers:
+## Running the Application
 
-- **Presentation Layer**: Handles user interaction.
-- **Business Logic Layer**: Contains the core application logic.
-- **Data Access Layer**: Manages data storage and retrieval.
-- **Configuration**: Stores application settings.
-- **Utilities**: Provides helper functions.
-- **Tests**: Contains unit and integration tests.
-
-## Setup
-
-1.  **Clone the repository:**
+1.  **Clone the repository (if you haven't already):**
     ```bash
-    git clone <repository-url>
-    cd <repository-name>
+    # git clone <repository-url>
+    # cd <repository-name>
     ```
+    (Replace with actual clone commands when repository is available)
 
-2.  **Create a virtual environment (optional but recommended):**
+2.  **Create and activate a virtual environment (recommended):**
     ```bash
     python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    source venv/bin/activate  # On Linux/macOS
+    # venv\Scripts\activate   # On Windows
     ```
 
 3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
+    (`tkinter` is part of Python's standard library. `requests` is used for NCBI API calls.)
 
-## Running the Application
+4.  **Run the application:**
+    ```bash
+    python app.py
+    ```
+    This will launch the GUI window.
 
-To run the main application script which demonstrates some basic interactions:
-```bash
-python app.py
-```
+## Development
+This application is built using Python and `tkinter` for the GUI. All core logic is contained within `app.py`.
 
-The application output will show:
-- Items being added directly via the repository.
-- Data being processed by a service in the logic layer.
-- Simulated CLI commands.
-- Items being added and retrieved via services called from `app.py`.
-
-To interact with the CLI directly (example):
-```bash
-python presentation/cli.py
-```
-You can then enter commands like `greet`, `add_item 10 MyCLIItem`, or `exit`.
-
-## Running Tests
-
-To run all tests:
-```bash
-python -m unittest discover -s tests
-```
-
-This will discover and run all test cases in the `tests` directory.
+(Further development notes, if any, can be added here.)

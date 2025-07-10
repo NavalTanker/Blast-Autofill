@@ -1,6 +1,10 @@
-## Agent Instructions
+## Agent Instructions for NCBI BLAST GUI Application
 
-- Follow the project structure outlined in the `README.md` file.
-- Ensure that code is well-documented with docstrings and comments.
-- Write unit tests for all new features and bug fixes.
-- Keep dependencies updated and listed in `requirements.txt`.
+- The primary goal is to develop a functional GUI application in `app.py` using `tkinter`.
+- Ensure NCBI API calls are handled in a non-blocking way (e.g., using threads) to keep the GUI responsive.
+- Provide clear user feedback within the GUI for all operations (submission, status, errors, results).
+- Focus on usability for the GUI elements.
+- `requests` library is used for HTTP calls. `tkinter` is used for the GUI.
+- All necessary BLAST logic (submission, status check, results fetching, parsing) will be consolidated into `app.py`.
+- Ensure graceful error handling for API issues or unexpected responses.
+- Code should be well-commented, especially the GUI event handling and threading parts.
