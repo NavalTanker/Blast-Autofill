@@ -22,8 +22,5 @@ COPY app.py .
 # If there were other assets like images or config files needed by app.py, they'd be copied too.
 # For this project, app.py is self-contained with requirements.txt.
 
-# Define environment variable for X display forwarding (can be overridden at runtime)
-ENV DISPLAY=:0
-
-# Command to run the application
-CMD ["python", "./app.py"]
+# Command to run the application, now wrapped in a shell script to echo DISPLAY
+CMD ["sh", "-c", "echo 'Container sees DISPLAY as: ' \"$DISPLAY\" && python ./app.py"]
