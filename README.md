@@ -39,7 +39,7 @@ Navigate to the root directory of the project (where the `Dockerfile` is located
 ```bash
 docker build -t blast-gui-app .
 ```
-This will create a Docker image named `blast-gui-app`.
+This will create a Docker image named `blast-gui-app`. If you pull new changes for `app.py` or other project files from the repository later, you will need to re-run this `docker build` command to update your local image with those changes.
 
 **Step 3: Configure X Server Access (Crucial for GUI Display)**
 
