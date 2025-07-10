@@ -4,6 +4,7 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 import threading
+from typing import Optional, Dict, List, Tuple # Added this import
 
 # --- Suppress NotOpenSSLWarning ---
 import warnings
