@@ -1,1 +1,4 @@
-requests
+# Project Dependencies
+# Add your project dependencies here
+# Example:
+# requests==2.25.1
